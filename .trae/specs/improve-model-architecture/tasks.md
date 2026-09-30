@@ -6,11 +6,12 @@
   - [ ] 1.3 依据实测落定 spec 中"数据依赖的参数决策"表（norm_factor、各 λ 初值），回写 checklist 记录实测值
 - [ ] Task 2: dataset.py 改造
   - [ ] 2.1 norm_factor 按 Task 1 实测值设定（构造参数默认值更新）
-  - [ ] 2.2 验证：单样本 __getitem__ 形状仍为 (3,256,256)/(1,256,256)/(1,256,256)，目标值落入 [0,1]，填充区 one-hot 仍全零（回归确认）
-- [ ] Task 3: model.py 注意力重写（R1 + R5 pre-norm）
-  - [ ] 3.1 CrossAttentionBlock：num_heads=2，pre-norm GroupNorm(1)
-  - [ ] 3.2 可学习 2D 轴向 RoPE：log-频率参数化、几何初始化（覆盖 ~4px–256px 尺度）、Q 全分辨率坐标 / K 池化格心坐标（×downsample_factor 还原像素系），频率写入日志接口
-  - [ ] 3.3 验证：随机输入 forward 形状不变；RoPE 频率参数 requires_grad；两个 block 频率独立
+  - [ ] 2.2 新增距离位置辅助输出：用 scipy.ndimage.distance_transform_edt 在未填充区域图上计算到源极(值1)与到边界(值3)的 EDT，归一化后 zero-pad，作为第 4 个返回项 (2,H,W)
+  - [ ] 2.3 验证：单样本 __getitem__ 返回 (input 3ch, target 1ch, mask 1ch, pos_dist 2ch)，目标值落入 [0,1]，填充区 one-hot 仍全零，距离通道数值范围合理（回归确认）
+- [ ] Task 3: model.py 注意力重写（R1 4 轴 RoPE + R5 pre-norm）
+  - [ ] 3.1 CrossAttentionBlock：num_heads=2，pre-norm GroupNorm(1)；forward 增加可选 pos_dist 参数，DualEncoderFNODecoder 透传 dataset 的距离位置辅助
+  - [ ] 3.2 可学习 4 轴 RoPE：位置轴 = (y, x, dist_source, dist_boundary)，log-频率参数化（每 block 每轴独立）、几何初始化（覆盖 ~4px–256px 尺度）、Q 全分辨率坐标 / K 池化格心坐标（×downsample_factor 还原像素系），频率写入日志接口
+  - [ ] 3.3 验证：随机输入 forward 形状不变；RoPE 频率参数 requires_grad；两个 block 频率独立；4 轴均参与旋转
 - [ ] Task 4: model.py 谱卷积与归一化（R2 + R5）
   - [ ] 4.1 实现 AxialSpectralConv（y 后 x 两次 1D 谱卷积，各带通道混合，AMP 兼容沿用原 float32 策略）
   - [ ] 4.2 替换 4 个 SpectralConv2d，modes 默认 32；DualEncoderFNODecoder 签名保持 (modes, width)
@@ -22,7 +23,7 @@
   - [ ] 5.3 train.py：argparse（数据路径、五 λ、modes、batch、epochs、grad_accum、limit-samples），五路损失日志，梯度累积含 GradScaler 正确语义，新权重名 dual_encoder_fno_model_v2.pth
   - [ ] 5.4 验证：真实 batch 上五路损失均非零且 loss_p/g/bc/eq 对总损失贡献 ≥1%
 - [ ] Task 6: visualize.py 适配与全链路冒烟（R6）
-  - [ ] 6.1 适配新权重文件名（输入仍 3 通道，可视化逻辑不需改通道索引）
+  - [ ] 6.1 适配新权重文件名；visualize 的 DataLoader 现返回 4 元组，解包时取前 3 项构建可视化（输入掩码仍由 one-hot 3 通道重建，距离位置辅助不用于绘图）
   - [ ] 6.2 CPU 冒烟：train.py --epochs 1 --limit-samples 4 跑通；~20 迭代损失下降无 NaN；visualize.py 对未训练新模型一次 forward 出图不崩溃
   - [ ] 6.3 确认旧 dual_encoder_fno_model.pth 未被改动
 
@@ -30,5 +31,5 @@
 
 - Task 1 → Task 2（norm_factor）、Task 5（λ 初值）依赖其实测结果
 - Task 2、Task 3、Task 4 相互独立，可并行
-- Task 5 依赖 Task 4（新模型）；损失函数本身不依赖 Task 2/3 可先行编写
+- Task 5 依赖 Task 2（距离位置辅助）、Task 3（新注意力）、Task 4（新模型）
 - Task 6 依赖 Task 1–5 全部完成

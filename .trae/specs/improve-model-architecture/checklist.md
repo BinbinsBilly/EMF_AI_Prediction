@@ -5,11 +5,15 @@
 - [ ] 实测记录：电位全局 min/max（跨子目录抽样 ≥30 对），norm_factor 已按实测落定（原 20000 偏大已证实并修正）
 - [ ] 实测记录：外边界环电位是否恒 0；源极连通域数量分布（loss_eq 设计依据）
 
-## R1 可学习 RoPE
-- [ ] RoPE 频率为每 block 每轴独立 nn.Parameter，log 参数化，几何级数初始化（覆盖 ~4px–256px 尺度）
+## R1 可学习 4 轴 RoPE（融合距离）
+- [ ] RoPE 频率为每 block 每轴（共 4 轴）独立 nn.Parameter，log 参数化，几何级数初始化（覆盖 ~4px–256px 尺度）
+- [ ] 4 个位置轴 = y 像素坐标、x 像素坐标、到源极 EDT 距离、到边界 EDT 距离
+- [ ] 距离由 dataset 用 distance_transform_edt 在未填充区域图上计算，归一化后 zero-pad，作为位置辅助传入 attention（不进编码器通道）
 - [ ] Q 用全分辨率坐标、K 用池化格心坐标（×downsample_factor 还原像素系）
+- [ ] head_dim=16 拆 4 轴各 4 维（2 频率对/轴）
 - [ ] 频率值训练中写入 TensorBoard 可监控
-- [ ] s2g 与 g2s 两 block 频率参数相互独立
+- [ ] s2g 与 g2s 两 block、4 轴频率参数相互独立
+- [ ] 距离轴的引入承接"近源/近边界处场变化剧烈"的局部性先验（无 ALiBi、无因果掩码、无 K/V 屏蔽）
 
 ## R2 轴向谱卷积
 - [ ] AxialSpectralConv = y 轴 1D 谱卷积 → x 轴 1D 谱卷积，均带通道混合，AMP 下无 ComplexHalf 错误
@@ -33,4 +37,4 @@
 - [ ] CPU 冒烟：--epochs 1 --limit-samples 4 跑通；~20 迭代损失下降、无 NaN
 - [ ] visualize.py 对新模型 forward 出图不崩溃
 - [ ] 旧 dual_encoder_fno_model.pth 未被修改或删除；新训练写 dual_encoder_fno_model_v2.pth
-- [ ] mask 语义回归：填充区输出仍被损失排除；输入仍为 3 通道 one-hot
+- [ ] mask 语义回归：填充区输出仍被损失排除；输入仍为 3 通道 one-hot（距离为位置辅助，非输入通道）

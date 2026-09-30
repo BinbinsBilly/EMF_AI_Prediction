@@ -8,8 +8,8 @@
 
 | # | 用户思路 | 裁决 | 理由与替代 |
 |---|---|---|---|
-| 1 | RoPE 频率可学习 | 采纳并加固 | 正确洞见：固定频率的尺度谱不适配 EMF 多尺度场。加固：log-频率参数化 + 几何级数初始化防频率塌缩。注意力中的位置信息由本项独立承担 |
-| 2 | 从源出发的因果（水波纹）掩码 | 否决，且不加替代 | 静电场是**椭圆**方程（Laplace），解全局依赖所有边界，硬因果序阻断远端信息流，物理上错误；水波纹直觉只适用波动（双曲）方程。（原拟的 ALiBi/距离通道/K-V 屏蔽三件套经用户评审因复杂度剔除，本轮不实现） |
+| 1 | RoPE 频率可学习 | 采纳并加固 | 正确洞见：固定频率的尺度谱不适配 EMF 多尺度场。加固：log-频率参数化 + 几何级数初始化防频率塌缩。注意力中的位置信息（含像素坐标与到源极/边界距离）由本项独立承担 |
+| 2 | 从源出发的因果（水波纹）掩码 | 否决 | 静电场是**椭圆**方程（Laplace），解全局依赖所有边界，硬因果序阻断远端信息流，物理上错误；水波纹直觉只适用波动（双曲）方程。但其"近处比远处重要"的局部性动机有效，改由 R1 的 RoPE 增设到源极/到边界距离两个位置轴来承接（距离信息融入第 1 项），不再单设章节 |
 | 3 | FNO 谱卷积参数过大 | 重构而非单纯缩减 | 4.36M 绝对量不算大，真正的病是 dense modes² 的参数增长方式。改为轴向 1D 谱卷积 ×2：参数 ~8× 下降的同时 modes 16→32，频率覆盖翻倍 |
 | 4 | BC 不覆盖、源极无约束 | 采纳 | loss_bc（边界/源极像素上加权数据项）+ loss_eq（源极等位 ‖∇φ‖²）。附带发现并修正 norm_factor 数值问题 |
 | 5 | 有限差分 + 全图差分后掩码 | 采纳（修正方案：掩码先行） | 对离散算子网络，有限差分是自洽选择；谱导数需周期性假设，被零填充违反。核心修正是"先腐蚀掩码、再取内点差分" |
@@ -17,11 +17,11 @@
 
 ## What Changes
 
-- `CrossAttentionBlock` 重写：新增可学习频率 2D 轴向 RoPE、pre-norm GroupNorm(1)；num_heads 4→2（head_dim 8→16，为 RoPE 提供 4 个频率对/轴）
+- `CrossAttentionBlock` 重写：新增可学习频率 4 轴 RoPE（位置轴 = y 像素坐标、x 像素坐标、到源极距离、到边界距离，共 4 轴）、pre-norm GroupNorm(1)；num_heads 4→2（head_dim 8→16，为 4 轴 RoPE 各分配 4 维=2 频率对/轴）
 - `SpectralConv2d`（dense）替换为 `AxialSpectralConv`（y 轴 1D 谱卷积 → x 轴 1D 谱卷积，各带通道混合），modes 16→32（CLI 可调至 64）
 - 源极/几何编码器中全部 `BatchNorm2d` → `GroupNorm(8)`
 - 新增损失：`loss_bc`（边界∪源极 Dirichlet 软约束）、`loss_eq`（源极区 ‖∇φ_pred‖²）；`loss_p`/`loss_g` 改用腐蚀内点掩码并在物理单位下计算
-- `dataset.py`：norm_factor 改为按数据实测最大值设定；数据路径 CLI 化（输入仍为 3 通道 one-hot，不变）
+- `dataset.py`：除 one-hot 输入(3,H,W) 外，额外输出距离位置辅助 (2,H,W)（到源极/到边界的 EDT，供 RoPE 使用，不进编码器通道）；norm_factor 改为按数据实测最大值设定；数据路径 CLI 化
 - `train.py`：总损失 = loss_d + λ_phy·loss_p + λ_grad·loss_g + λ_bc·loss_bc + λ_eq·loss_eq，全部系数 CLI 可调；五路损失分项日志；可选梯度累积
 - **BREAKING**：旧 checkpoint `dual_encoder_fno_model.pth` 不再兼容（保留原文件不删除）；新训练写入 `dual_encoder_fno_model_v2.pth`
 
@@ -45,13 +45,16 @@
 
 ## ADDED Requirements
 
-### Requirement: R1 可学习频率 2D 轴向 RoPE
+### Requirement: R1 可学习频率 4 轴 RoPE（融合距离）
 
-注意力 block 中，Q（全分辨率坐标）与 K（池化后格心坐标，乘以 downsample_factor 还原到原像素坐标系）的每个 head 向量 SHALL 按 2D 轴向旋转位置编码旋转：head_dim 拆为 x 半轴与 y 半轴，各半轴内相邻维配对为复数，乘以 e^{i·pos·θ}。频率 θ = exp(λ) SHALL 为每 block 每轴独立可学习参数，初始化为几何级数（覆盖 ~4px 到 ~256px 空间尺度），训练中记录到 TensorBoard。
+注意力 block 中，Q（全分辨率坐标）与 K（池化后格心坐标，乘以 downsample_factor 还原到原像素坐标系）的每个 head 向量 SHALL 按 4 轴 RoPE 旋转。4 个位置轴为：y 像素坐标、x 像素坐标、到源极的 EDT 距离、到边界的 EDT 距离（后两者由 dataset 计算并传入，在填充区 zero-pad）。head_dim=16 拆为 4 轴，每轴 4 维（2 个频率对）；各轴内相邻维配对为复数，乘以 e^{i·pos·θ}。频率 θ = exp(λ) SHALL 为每 block 每轴独立可学习参数，初始化为几何级数（覆盖 ~4px 到 ~256px 空间尺度），训练中记录到 TensorBoard。
 
-#### Scenario: 频率自适应
+距离位置由 dataset 用 `scipy.ndimage.distance_transform_edt` 在未填充区域图上计算（到源极=到值 1 区域的距离，到边界=到值 3 区域的距离），归一化后作为位置辅助张量传入 attention，不参与编码器卷积通道。
+
+#### Scenario: 频率自适应与距离先验
 - **WHEN** 不同边界工况下场的空间尺度差异显著
-- **THEN** s2g 与 g2s 两个 block 学出不同的频率谱（日志可查），而非共享固定频率
+- **THEN** s2g 与 g2s 两个 block、4 个轴学出不同的频率谱（日志可查），而非共享固定频率
+- **AND** 到源极/到边界两个距离轴的引入使注意力天然偏向"近源/近边界处场变化剧烈"的局部性先验，无需硬因果序或 ALiBi 偏置
 - **AND** 若观察到频率塌缩（多个 λ 收敛到同值），checklist 中的监控项触发，提示加正则（本轮不实现）
 
 ### Requirement: R2 轴向谱卷积
@@ -111,7 +114,7 @@ norm_factor SHALL 改为数据实测全局最大电位的向上取整值（Task 
 ### Requirement: 因果式注意力掩码（用户提案，未实现即否决）
 
 **Reason**: 静电场为椭圆方程，解在每一点依赖全部边界条件；硬因果序（水波纹扩散）物理上仅适用双曲/波动问题，且破坏并行性。
-**Migration**: 无存量实现，无需迁移。原拟的 ALiBi 距离偏置、距离变换通道、K/V 填充屏蔽三件套替代方案，经用户评审以复杂度为由剔除，本轮不实现。
+**Migration**: 无存量实现，无需迁移。其"近处比远处重要"的局部性动机由 R1 的 RoPE 增设到源极/到边界距离两个位置轴承接（距离信息融入第 1 项）。
 
 ### Requirement: BatchNorm2d 的使用
 
