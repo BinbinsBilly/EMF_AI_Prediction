@@ -4,14 +4,16 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+from scipy.ndimage import distance_transform_edt
 
 class ElectrostaticDataset(Dataset):
-    def __init__(self, data_dir, target_height=256, norm_factor=20000.0):
+    def __init__(self, data_dir, target_height=256, norm_factor=60000.0):
         """
         Args:
             data_dir (str): Path to the directory containing the CSV files.
             target_height (int): The target height to pad the data to.
             norm_factor (float): Factor to normalize the target potential.
+                               Default 60000.0 (measured global max potential).
         """
         self.data_dir = data_dir
         self.target_height = target_height
@@ -76,6 +78,36 @@ class ElectrostaticDataset(Dataset):
             
         return input_np, target_np, mask_np
 
+    def _compute_pos_dist(self, input_np):
+        """
+        Computes distance-based positional auxiliary maps on the UNPADDED
+        original region map (values: 1=source, 2=air, 3=boundary).
+        Units are pixels (aligned with the RoPE pixel coordinate axes,
+        no extra normalization/scaling).
+        Returns:
+            pos_dist: (2, H, W) float32
+                Channel 0: Euclidean distance to the nearest source pixel.
+                Channel 1: Euclidean distance to the nearest boundary pixel.
+        """
+        dist_to_source = distance_transform_edt(input_np != 1).astype(np.float32)
+        dist_to_boundary = distance_transform_edt(input_np != 3).astype(np.float32)
+        return np.stack([dist_to_source, dist_to_boundary], axis=0)
+
+    def _pad_pos_dist(self, pos_dist_np):
+        """
+        Pads the (2, H, W) pos_dist to target_height along H with the same
+        symmetric top/bottom zero-padding scheme as _pad_data.
+        Padded regions in the distance maps are 0.
+        """
+        _, h, _ = pos_dist_np.shape
+        if h < self.target_height:
+            pad_total = self.target_height - h
+            pad_top = pad_total // 2
+            pad_bottom = pad_total - pad_top
+            pad_width = ((0, 0), (pad_top, pad_bottom), (0, 0))
+            pos_dist_np = np.pad(pos_dist_np, pad_width, mode='constant', constant_values=0)
+        return pos_dist_np
+
     def _to_tensors(self, input_np, target_np, mask_np):
         """Converts numpy arrays to PyTorch tensors with channel dimension."""
         # input_np: (H, W) with values 0, 1, 2, 3
@@ -107,8 +139,15 @@ class ElectrostaticDataset(Dataset):
         # 2. Normalize
         target_np = self._normalize_target(target_np)
 
-        # 3. Pad
-        input_np, target_np, mask_np = self._pad_data(input_np, target_np)
+        # 3. Compute distance positional maps on the UNPADDED region map
+        pos_dist_np = self._compute_pos_dist(input_np)
 
-        # 4. Convert to Tensor
-        return self._to_tensors(input_np, target_np, mask_np)
+        # 4. Pad (same symmetric zero-padding scheme; distance maps are 0 in padded regions)
+        input_np, target_np, mask_np = self._pad_data(input_np, target_np)
+        pos_dist_np = self._pad_pos_dist(pos_dist_np)
+
+        # 5. Convert to Tensor
+        input_tensor, target_tensor, mask_tensor = self._to_tensors(input_np, target_np, mask_np)
+        pos_dist_tensor = torch.from_numpy(np.ascontiguousarray(pos_dist_np)) # (2, H, W)
+
+        return input_tensor, target_tensor, mask_tensor, pos_dist_tensor
