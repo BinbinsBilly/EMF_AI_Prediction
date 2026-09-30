@@ -1,0 +1,51 @@
+# Tasks
+
+- [ ] Task 1: 环境重建与多工况递归数据加载（R1）
+  - [ ] 1.1 重装依赖：torch(CPU)、tensorboard、matplotlib、scipy（沙箱重置后 numpy/pandas/scipy 已装）
+  - [ ] 1.2 `dataset.py`：`_find_file_pairs` 支持递归扫描（data-path 为根目录时发现 `**/original_region_data_*.csv` 并配对），每对样本附 condition 元数据（父目录名）；dataset 返回结构兼容现有训练代码（可用属性或包装暴露 condition）
+  - [ ] 1.3 回归验证：单工况目录路径行为不变（旧冒烟命令可跑）；根目录模式实测样本数 ≈ 1314、工况数 ≈ 100；随机抽 3 对形状/掩码/EDT 正常
+- [ ] Task 2: 训练/验证划分（R2）
+  - [ ] 2.1 实现划分函数：random 分层（按 condition 分层 80/20）与 group（工况整组 80/20）两模式 + seed
+  - [ ] 2.2 manifest 落盘（JSON：seed/mode/train/val 文件清单/condition 标注），train.py 新增 `--val-ratio --split-mode --split-seed --split-file`
+  - [ ] 2.3 验证：同 seed 复现一致；group 模式零工况交集；random 模式每工况 val ≥1；训练循环每 epoch 跑验证
+- [ ] Task 3: 评估指标模块（R3）
+  - [ ] 3.1 新建 `eval_utils.py`：relative_l2、max_abs_error、bc_violation、laplace_residual、equipotential_residual（masked 口径与 train.py 十字腐蚀一致，复用 erode_mask）
+  - [ ] 3.2 新建 `eval.py`：加载权重对任意数据目录/划分出全套指标报告（CLI：--model --weights --data-path --split-file --limit）
+  - [ ] 3.3 toy 验证：线性场 Laplace 残差=0、pred=target 时全部指标=0、常数场等位残差=0
+- [ ] Task 4: TensorBoard 训练可视化扩展（R4）
+  - [ ] 4.1 每 epoch 写验证指标标量：val/mse、val/rel_l2、val/max_err、val/bc_violation、val/laplace_residual、val/eq_residual
+  - [ ] 4.2 验证样本四联图（region/target/pred/error，K 个样本，`--vis-interval` 控制）+ 误差直方图 histogram
+  - [ ] 4.3 `--run-name/--tag` + hparams（超参/数据量/划分模式）记录，runs 命名规范写入 spec 目录说明
+  - [ ] 4.4 冒烟验证：短训练跑通，TensorBoard 出现全部新标量与图像
+- [ ] Task 5: 现有数据真值场验证与裁决（R6）
+  - [ ] 5.1 新建 `verify_data.py`：独立 FD 求解器（5 点差分稀疏矩阵 + scipy sparse 直接/CG，Dirichlet 全封闭，相对残差 < 1e-10），对指定目录/全量对求解并与存储场对比
+  - [ ] 5.2 全量 1314 对交叉校验报告（每对：相对 L2、max 差、BC 精确、E=0、存储场自身 Laplace 残差）落盘 `verification_report.csv`/`json`
+  - [ ] 5.3 依据 spec 阈值（相对 L2 < 1e-3）出具裁决：PASS → Task 7 按当前逻辑生成；FAIL → 更新本 spec 记录新方案后再生成
+- [ ] Task 6: v1 基线复现与零样本对比（R5）
+  - [ ] 6.1 读旧权重 `dual_encoder_fno_model.pth` 的 state_dict 键/形状，反推 v1 架构并实现 `model_v1.py`（dense SpectralConv2d、无 RoPE 注意力、原归一化），`load_state_dict(strict=True)` 通过
+  - [ ] 6.2 v1 旧权重在阶段二 val split 上零样本评估（R3 指标），与 v2 对比结果记录（TensorBoard 标量 + proceedings 表格）
+- [ ] Task 7: 自动化数据生成脚本（R7）
+  - [ ] 7.1 新建 `gen_data.py`：几何族参数化（`--family rect|circle|polygon|blob`、`--conditions N`、`--variants M`、`--seed`、`--out /workspace/data`）→ 区域图（外框源极 + 内部 HV 电极 + 空气）→ FD 求解 → 导体写常数 → CSV 对（命名兼容 R1）
+  - [ ] 7.2 落盘前自动校验：BC 精确、E=0、Laplace 残差 < tol、二方法抽检（细网格 2x 求解降采样对比）；失败拒写 + 非零退出
+  - [ ] 7.3 单族小批量冒烟：每族生成 2 工况 × 2 变体，校验全过、dataset 递归加载可读
+- [ ] Task 8: 新几何族数据生成（R8）
+  - [ ] 8.1 按 spec 建议量生成：rect 补充族、circle 族、polygon 族、blob 族（首批各 50 构型 × 5 变体，视 CPU 时间可减半，以讨论文档口径为准）
+  - [ ] 8.2 全部通过自动校验，产出各族校验报告；`/workspace/data/` 布局符合 `<族>/<工况>/` 且递归加载计数正确
+- [ ] Task 9: 数据量学习曲线与讨论文档（R9）
+  - [ ] 9.1 用现有 1314 对按 25/50/75/100% 子集（同 val、同超参、--run-name 标注）训练，产出 val 相对 L2 vs N 曲线入 TensorBoard
+  - [ ] 9.2 撰写 proceedings 讨论文档：每几何族样本量建议、当前数据是否足够的实证结论、不规则区域拓展路线（对应 spec 数据量讨论章节，以实验数据修正）
+- [ ] Task 10: v2 全量训练与阶段二总结
+  - [ ] 10.1 v2 在划分后的全量数据上训练（epoch 数按 CPU 时间预算务实设定），完整 TensorBoard 曲线 + 与 v1 基线并排对比
+  - [ ] 10.2 生成 `proceedings/3. 阶段二记录.md`（Obsidian 格式：验证裁决、v1/v2 对比、学习曲线、新数据集说明、阶段三展望）
+
+# Task Dependencies
+
+- Task 1 → 所有后续（数据加载是地基）
+- Task 2、Task 3 依赖 Task 1，二者相互独立可并行
+- Task 4 依赖 Task 2 + Task 3
+- Task 5 仅依赖 Task 1.1（环境），可与 Task 2–4 并行；Task 7 依赖 Task 5（裁决）
+- Task 6 依赖 Task 2 + Task 3（val split 与指标）
+- Task 8 依赖 Task 7
+- Task 9 依赖 Task 4（训练管线就绪）+ Task 2/3
+- Task 10 依赖 Task 4、5、6、8、9
+- CPU 时间预算注意：训练类任务（4/9/10）的 epoch 数实施时务实设定，产出曲线优先于追求收敛
