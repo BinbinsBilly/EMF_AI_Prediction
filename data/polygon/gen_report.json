@@ -1,0 +1,259 @@
+{
+  "meta": {
+    "script": "/workspace/Attentiion_PINN/gen_data.py",
+    "family": "polygon",
+    "geom_spec": "1~4 个直角多边形电极（L/T/U 模板：臂厚 10~22px、主长 36~84px、横臂 24~84px、U 开口 12~30px；整体旋转 0/90/180/270°）；同上间隙约束",
+    "seed": 42,
+    "conditions": 2,
+    "variants_per_condition": 2,
+    "size_w": 256,
+    "base_layout_canvas": "256x256",
+    "heights_explicit": null,
+    "heights_default_pool": [
+      256,
+      246,
+      236,
+      226,
+      216,
+      206,
+      196,
+      186,
+      176,
+      166
+    ],
+    "height_rule": "variant0=256 + 无放回抽样",
+    "tol_solve": 1e-10,
+    "laplace_tol_v": 0.05,
+    "roundtrip_tol_v": 0.00051,
+    "refine_check_ratio": 0.25,
+    "refine_tol_rel_l2": 0.02,
+    "n_refine_variants_per_condition": 1,
+    "gap_px": 8,
+    "min_electrode_px_after_crop": 20,
+    "csv_format": {
+      "region": "int,%d",
+      "potential": "float32,%.3f",
+      "delimiter": ",",
+      "header": false
+    },
+    "timestamp": "2026-09-30 18:50:51"
+  },
+  "conditions": [
+    {
+      "condition": "polygon_c000",
+      "heights": [
+        256,
+        236
+      ],
+      "ok": true,
+      "fail_reason": "",
+      "layout_attempts": 1,
+      "electrodes": [
+        {
+          "kind": "T",
+          "rot_deg": 0,
+          "h": 82,
+          "w": 29,
+          "rows": [
+            59,
+            140
+          ],
+          "cols": [
+            209,
+            237
+          ]
+        },
+        {
+          "kind": "U",
+          "rot_deg": 0,
+          "h": 46,
+          "w": 42,
+          "rows": [
+            38,
+            83
+          ],
+          "cols": [
+            140,
+            181
+          ]
+        }
+      ],
+      "variants": [
+        {
+          "variant": 0,
+          "height": 256,
+          "shape": "256x256",
+          "n_air": 61142,
+          "n_hv_px": 3374,
+          "n_hv_components": 2,
+          "src_hv_adjacent_px": 0,
+          "refine_done": true,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.672585615102239e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.01171875,
+            "refine_rel_l2": 0.0055183893637287705,
+            "refine_solve_residual": 3.827296932325843e-15,
+            "refine_sec": 2.0,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.014000000024680048
+          },
+          "files": [
+            "original_region_data_0_256.csv",
+            "potential_distribution_0_256.csv"
+          ],
+          "sec": 2.43
+        },
+        {
+          "variant": 1,
+          "height": 236,
+          "shape": "236x256",
+          "n_air": 56062,
+          "n_hv_px": 3374,
+          "n_hv_components": 2,
+          "src_hv_adjacent_px": 0,
+          "refine_done": false,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.6106393105447943e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.01171875,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.014000000024680048
+          },
+          "files": [
+            "original_region_data_1_236.csv",
+            "potential_distribution_1_236.csv"
+          ],
+          "sec": 0.51
+        }
+      ],
+      "n_electrodes_base": 2,
+      "sec": 2.9
+    },
+    {
+      "condition": "polygon_c001",
+      "heights": [
+        256,
+        246
+      ],
+      "ok": true,
+      "fail_reason": "",
+      "layout_attempts": 1,
+      "electrodes": [
+        {
+          "kind": "L",
+          "rot_deg": 270,
+          "h": 68,
+          "w": 62,
+          "rows": [
+            137,
+            204
+          ],
+          "cols": [
+            109,
+            170
+          ]
+        },
+        {
+          "kind": "T",
+          "rot_deg": 0,
+          "h": 78,
+          "w": 57,
+          "rows": [
+            167,
+            244
+          ],
+          "cols": [
+            19,
+            75
+          ]
+        }
+      ],
+      "variants": [
+        {
+          "variant": 0,
+          "height": 256,
+          "shape": "256x256",
+          "n_air": 60685,
+          "n_hv_px": 3831,
+          "n_hv_components": 2,
+          "src_hv_adjacent_px": 0,
+          "refine_done": true,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.7462077347628177e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.01171875,
+            "refine_rel_l2": 0.005117022963994923,
+            "refine_solve_residual": 3.9824772241411794e-15,
+            "refine_sec": 1.78,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.014999999992141966
+          },
+          "files": [
+            "original_region_data_0_256.csv",
+            "potential_distribution_0_256.csv"
+          ],
+          "sec": 2.21
+        },
+        {
+          "variant": 1,
+          "height": 246,
+          "shape": "246x256",
+          "n_air": 58145,
+          "n_hv_px": 3831,
+          "n_hv_components": 2,
+          "src_hv_adjacent_px": 0,
+          "refine_done": false,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.675252423935378e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.01171875,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.015000000006693881
+          },
+          "files": [
+            "original_region_data_1_246.csv",
+            "potential_distribution_1_246.csv"
+          ],
+          "sec": 0.3
+        }
+      ],
+      "n_electrodes_base": 2,
+      "sec": 2.5
+    }
+  ],
+  "summary": {
+    "pairs_planned": 4,
+    "pairs_written": 4,
+    "pairs_failed": 0,
+    "conditions_ok": 2,
+    "checks": [
+      "1_BC_exact(mem+roundtrip)",
+      "2_conductor_E0(same-kind)",
+      "3_solve_residual<tol",
+      "4_stored_laplace<0.05V",
+      "5_refine_rel_l2<0.02"
+    ],
+    "duration_sec": 5.5
+  }
+}

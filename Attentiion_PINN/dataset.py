@@ -7,32 +7,62 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt
 
 class ElectrostaticDataset(Dataset):
-    def __init__(self, data_dir, target_height=256, norm_factor=60000.0):
+    def __init__(self, data_dir, target_height=256, target_width=256,
+                 norm_factor=60000.0):
         """
         Args:
             data_dir (str): Path to the directory containing the CSV files.
             target_height (int): The target height to pad the data to.
+            target_width (int): The target width to pad the data to. Samples
+                               from different conditions may have different
+                               widths (e.g. 50 vs 256); padding makes them
+                               batchable and model-compatible.
             norm_factor (float): Factor to normalize the target potential.
                                Default 60000.0 (measured global max potential).
         """
         self.data_dir = data_dir
         self.target_height = target_height
+        self.target_width = target_width
         self.norm_factor = norm_factor
         self.file_pairs = self._find_file_pairs(data_dir)
+        # Condition metadata: parent directory name of each sample's region
+        # file (e.g. results_reduction_fixed_boundary42), aligned 1:1 with
+        # self.file_pairs.
+        self.conditions = [
+            os.path.basename(os.path.dirname(region_path))
+            for region_path, _ in self.file_pairs
+        ]
+        self.condition_counts = {}
+        for cond in self.conditions:
+            self.condition_counts[cond] = self.condition_counts.get(cond, 0) + 1
+
+    def get_condition(self, idx):
+        """Returns the condition name (parent directory) of sample idx."""
+        return self.conditions[idx]
 
     def _find_file_pairs(self, data_dir):
-        """Finds and pairs input and target CSV files."""
+        """Finds and pairs input and target CSV files recursively.
+
+        Supports both usages:
+          - data_dir is a single-condition directory (CSV pairs sit
+            directly inside it);
+          - data_dir is a data root directory (each condition lives in
+            its own subdirectory).
+        The recursive glob naturally covers both cases. Output is sorted
+        by region file path so sample indices are deterministic.
+        """
         file_pairs = []
-        # Find all original_region_data_*.csv files
-        search_pattern = os.path.join(data_dir, "original_region_data_*.csv")
-        input_files = glob.glob(search_pattern)
+        # Recursively find all original_region_data_*.csv files
+        search_pattern = os.path.join(data_dir, '**', 'original_region_data_*.csv')
+        input_files = sorted(glob.glob(search_pattern, recursive=True))
 
         for input_path in input_files:
             # Construct the corresponding potential_distribution filename
+            # in the same directory as the region file
             filename = os.path.basename(input_path)
             suffix = filename.replace("original_region_data_", "")
             target_filename = "potential_distribution_" + suffix
-            target_path = os.path.join(data_dir, target_filename)
+            target_path = os.path.join(os.path.dirname(input_path), target_filename)
 
             if os.path.exists(target_path):
                 file_pairs.append((input_path, target_path))
@@ -56,26 +86,37 @@ class ElectrostaticDataset(Dataset):
 
     def _pad_data(self, input_np, target_np):
         """
-        Pads data to target_height and returns a validity mask.
+        Pads data to (target_height, target_width) and returns a validity mask.
         Returns:
             padded_input, padded_target, mask
         """
         h, w = input_np.shape
         # Create a mask indicating valid regions (1 for valid, 0 for padded)
         mask_np = np.ones_like(input_np, dtype=np.float32)
-        
+
         if h < self.target_height:
             pad_total = self.target_height - h
             pad_top = pad_total // 2
             pad_bottom = pad_total - pad_top
-            
+
             pad_width = ((pad_top, pad_bottom), (0, 0))
-            
+
             # Pad with zeros. ((top, bottom), (left, right))
             input_np = np.pad(input_np, pad_width, mode='constant', constant_values=0)
             target_np = np.pad(target_np, pad_width, mode='constant', constant_values=0)
             mask_np = np.pad(mask_np, pad_width, mode='constant', constant_values=0)
-            
+
+        if w < self.target_width:
+            pad_total = self.target_width - w
+            pad_left = pad_total // 2
+            pad_right = pad_total - pad_left
+
+            pad_width = ((0, 0), (pad_left, pad_right))
+
+            input_np = np.pad(input_np, pad_width, mode='constant', constant_values=0)
+            target_np = np.pad(target_np, pad_width, mode='constant', constant_values=0)
+            mask_np = np.pad(mask_np, pad_width, mode='constant', constant_values=0)
+
         return input_np, target_np, mask_np
 
     def _compute_pos_dist(self, input_np):
@@ -95,16 +136,23 @@ class ElectrostaticDataset(Dataset):
 
     def _pad_pos_dist(self, pos_dist_np):
         """
-        Pads the (2, H, W) pos_dist to target_height along H with the same
-        symmetric top/bottom zero-padding scheme as _pad_data.
+        Pads the (2, H, W) pos_dist to (target_height, target_width) with the
+        same symmetric zero-padding scheme as _pad_data (top/bottom for H,
+        left/right for W).
         Padded regions in the distance maps are 0.
         """
-        _, h, _ = pos_dist_np.shape
+        _, h, w = pos_dist_np.shape
         if h < self.target_height:
             pad_total = self.target_height - h
             pad_top = pad_total // 2
             pad_bottom = pad_total - pad_top
             pad_width = ((0, 0), (pad_top, pad_bottom), (0, 0))
+            pos_dist_np = np.pad(pos_dist_np, pad_width, mode='constant', constant_values=0)
+        if w < self.target_width:
+            pad_total = self.target_width - w
+            pad_left = pad_total // 2
+            pad_right = pad_total - pad_left
+            pad_width = ((0, 0), (0, 0), (pad_left, pad_right))
             pos_dist_np = np.pad(pos_dist_np, pad_width, mode='constant', constant_values=0)
         return pos_dist_np
 

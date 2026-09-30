@@ -1,0 +1,125 @@
+{
+  "meta": {
+    "script": "/workspace/Attentiion_PINN/verify_data.py",
+    "data_root": "/workspace/retangle_data",
+    "out_dir": "/workspace/Attentiion_PINN",
+    "rel_l2_threshold": 0.001,
+    "sampling_mode": "full",
+    "pairs_total_in_dataset": 1314,
+    "pairs_processed": 1314,
+    "sampling_rate": 1.0,
+    "timestamp": "2026-09-30 18:33:40",
+    "duration_sec": 394.9
+  },
+  "total_pairs": 1314,
+  "n_success": 1314,
+  "n_failed": 0,
+  "rel_l2_air": {
+    "min": 9.685998196944374e-07,
+    "mean": 0.1282096995896554,
+    "max": 0.4305388866547469,
+    "p50": 0.11600923141801316,
+    "p90": 0.24952809513009508,
+    "p99": 0.37948246895244875
+  },
+  "max_abs_diff_air": {
+    "min": 0.014273148366555688,
+    "mean": 5170.900439050003,
+    "max": 22594.091962649225,
+    "p50": 4128.872655690087,
+    "p90": 10843.176021433448,
+    "p99": 21983.980999997693
+  },
+  "rel_l2_air_fixedgeom": {
+    "min": 9.685998196944374e-07,
+    "mean": 0.12821139318882208,
+    "max": 0.4305388866547469,
+    "p50": 0.11600923140874708,
+    "p90": 0.24952809513002006,
+    "p99": 0.3794824689524488
+  },
+  "error_attribution": {
+    "n_fd_exact_rel_l2_lt_1e-5": 21,
+    "n_pass_by_threshold": 24,
+    "n_mislabel_limited_pass_after_geometry_fix": 0,
+    "n_accuracy_limited_still_fail_after_geometry_fix": 1290
+  },
+  "bc_src_exact_rate": 1.0,
+  "bc_hv_exact_rate": 1.0,
+  "bc_zero_exact_rate": 1.0,
+  "e0_exact_rate": 1.0,
+  "rel_l2_pass_rate": 0.0182648401826484,
+  "stored_laplace_max": {
+    "min": 0.0020000000040454324,
+    "mean": 3.1304067861507545,
+    "max": 12.762000000016997,
+    "p50": 2.7655000000022483,
+    "p90": 6.026700000001438,
+    "p99": 9.471340000007565
+  },
+  "stored_fd_residual_max": {
+    "min": 0.0020000000040454324,
+    "mean": 3.1304067861504765,
+    "max": 12.76200000000972,
+    "p50": 2.7655000000013388,
+    "p90": 6.026700000000164,
+    "p99": 9.471340000001236
+  },
+  "solve_residual": {
+    "min": 1.2130610813852707e-15,
+    "mean": 2.4421593444246853e-15,
+    "max": 4.471853616204706e-15,
+    "p50": 2.4669178544782835e-15,
+    "p90": 3.2507688530488034e-15,
+    "p99": 3.830301164944266e-15
+  },
+  "n_pairs_with_invalid_pixels": 21,
+  "n_pairs_with_isolated_air": 0,
+  "n_pairs_with_hidden_ground_mislabel": 597,
+  "n_pairs_with_hidden_hv_mislabel": 35,
+  "total_hidden_ground_px": 1363696,
+  "total_hidden_hv_px": 105,
+  "n_pairs_with_src_hv_adjacency": 432,
+  "total_src_hv_adjacent_px": 28065,
+  "zero_value_pairs_ground_vs_insulate": {
+    "n_pairs": 21,
+    "rel_l2_air_ground_semantics": {
+      "min": 9.685998196944374e-07,
+      "mean": 1.1276031138302517e-06,
+      "max": 1.3283938581047073e-06,
+      "p50": 1.1311927424325272e-06,
+      "p90": 1.244048412094633e-06,
+      "p99": 1.3242375912841485e-06
+    },
+    "rel_l2_air_insulate_semantics": {
+      "min": 1.3283938581047073e-06,
+      "mean": 2.877659174843369,
+      "max": 5.735450191405808,
+      "p50": 1.3952424958212624,
+      "p90": 5.728703256593835,
+      "p99": 5.734836973218911
+    },
+    "max_abs_diff_air_insulate_semantics": {
+      "min": 0.019979395348855178,
+      "mean": 30758.850808521238,
+      "max": 59771.95999999825,
+      "p50": 17237.06056018587,
+      "p90": 59765.12799999764,
+      "p99": 59771.86539999838
+    }
+  },
+  "verdict": "FAIL",
+  "verdict_reasons": [
+    "空气区相对 L2 >= 0.001: 1290/1314 对（最差: results_reduction_fixed_boundary25/0_256, rel_l2=4.305e-01）"
+  ],
+  "notes": [
+    "无效像素(值 0)的处理——实证修正：任务原假设为绝缘(零通量)，但实测表明数据生成器把 0 值像素当作 0V 接地电极(与源极同电位)：①全部 0 值像素上 stored 精确=0V；②按接地语义求解，boundary21/_50 系列 21 对 rel_l2 ~1e-6(stored 即本网格 5 点 FD 解)；③按绝缘语义求解，其中接触空气的对 rel_l2 高达 1.4~5.7。因此主指标采用接地语义，同时保留绝缘语义对照列(rel_l2_air_insul0)。",
+    "0 值像素仅出现于 results_reduction_fixed_boundary21 目录的 21 个 *_50 后缀对(1.6%)。",
+    "图像边界外的邻居按绝缘（零通量）处理。",
+    "被完全隔离、不接触任何 Dirichlet 电极的空气连通域电位不定，统一填 0 并计入 n_isolated_air。",
+    "CSV 以 float64 读入；rel_l2/max_diff 仅在 region==2 像素上计算。",
+    "stored_fd_residual_max 为 stored 场代入本网格 5 点 FD 方程组(A·x=b)的最大残差，直接反映 stored 是否为本网格 FD 方程的解。",
+    "hidden_ground_px/hidden_hv_px 检测 region 图标为空气(2)但 stored 为导体值(0/60000)的像素数——即 region 图与 stored 场生成几何不一致（隐藏电极错标）。",
+    "E=0 检查语义：仅对'邻居与中心为同一种导体'的十字内点方向计差分。实测 391/1314 对几何中源极与 HV 电极直接相邻（src_hv_adjacent_px>0），接触处 0V↔60000V 跳变是物理正常的界面不连续，不属于导体内部 E≠0。"
+  ]
+}
