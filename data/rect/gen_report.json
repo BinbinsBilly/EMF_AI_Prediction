@@ -1,0 +1,346 @@
+{
+  "meta": {
+    "script": "/workspace/Attentiion_PINN/gen_data.py",
+    "family": "rect",
+    "geom_spec": "1~10 个实心矩形电极，边长 16~110px 均匀随机，位置均匀随机；电极-外框及电极两两之间 ≥8px 空气隙",
+    "seed": 42,
+    "conditions": 2,
+    "variants_per_condition": 2,
+    "size_w": 256,
+    "base_layout_canvas": "256x256",
+    "heights_explicit": null,
+    "heights_default_pool": [
+      256,
+      246,
+      236,
+      226,
+      216,
+      206,
+      196,
+      186,
+      176,
+      166
+    ],
+    "height_rule": "variant0=256 + 无放回抽样",
+    "tol_solve": 1e-10,
+    "laplace_tol_v": 0.05,
+    "roundtrip_tol_v": 0.00051,
+    "refine_check_ratio": 0.25,
+    "refine_tol_rel_l2": 0.02,
+    "n_refine_variants_per_condition": 1,
+    "gap_px": 8,
+    "min_electrode_px_after_crop": 20,
+    "csv_format": {
+      "region": "int,%d",
+      "potential": "float32,%.3f",
+      "delimiter": ",",
+      "header": false
+    },
+    "timestamp": "2026-09-30 18:50:42"
+  },
+  "conditions": [
+    {
+      "condition": "rect_c000",
+      "heights": [
+        256,
+        246
+      ],
+      "ok": true,
+      "fail_reason": "",
+      "layout_attempts": 1,
+      "electrodes": [
+        {
+          "kind": "rect",
+          "h": 78,
+          "w": 57,
+          "rows": [
+            78,
+            155
+          ],
+          "cols": [
+            165,
+            221
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 24,
+          "w": 82,
+          "rows": [
+            52,
+            75
+          ],
+          "cols": [
+            23,
+            104
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 66,
+          "w": 108,
+          "rows": [
+            97,
+            162
+          ],
+          "cols": [
+            25,
+            132
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 18,
+          "w": 79,
+          "rows": [
+            39,
+            56
+          ],
+          "cols": [
+            113,
+            191
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 75,
+          "w": 24,
+          "rows": [
+            169,
+            243
+          ],
+          "cols": [
+            181,
+            204
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 30,
+          "w": 37,
+          "rows": [
+            184,
+            213
+          ],
+          "cols": [
+            60,
+            96
+          ]
+        }
+      ],
+      "variants": [
+        {
+          "variant": 0,
+          "height": 256,
+          "shape": "256x256",
+          "n_air": 46642,
+          "n_hv_px": 17874,
+          "n_hv_components": 6,
+          "src_hv_adjacent_px": 0,
+          "refine_done": true,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.192059536077242e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.01171875,
+            "refine_rel_l2": 0.004988443323551882,
+            "refine_solve_residual": 3.1212385151791196e-15,
+            "refine_sec": 0.84,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.014999999999417923
+          },
+          "files": [
+            "original_region_data_0_256.csv",
+            "potential_distribution_0_256.csv"
+          ],
+          "sec": 1.06
+        },
+        {
+          "variant": 1,
+          "height": 246,
+          "shape": "246x256",
+          "n_air": 44102,
+          "n_hv_px": 17874,
+          "n_hv_components": 6,
+          "src_hv_adjacent_px": 0,
+          "refine_done": false,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.1360128057500553e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.01171875,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.014000000031956006
+          },
+          "files": [
+            "original_region_data_1_246.csv",
+            "potential_distribution_1_246.csv"
+          ],
+          "sec": 0.17
+        }
+      ],
+      "n_electrodes_base": 6,
+      "sec": 1.2
+    },
+    {
+      "condition": "rect_c001",
+      "heights": [
+        256,
+        196
+      ],
+      "ok": true,
+      "fail_reason": "",
+      "layout_attempts": 1,
+      "electrodes": [
+        {
+          "kind": "rect",
+          "h": 93,
+          "w": 99,
+          "rows": [
+            24,
+            116
+          ],
+          "cols": [
+            73,
+            171
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 49,
+          "w": 102,
+          "rows": [
+            187,
+            235
+          ],
+          "cols": [
+            63,
+            164
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 93,
+          "w": 48,
+          "rows": [
+            128,
+            220
+          ],
+          "cols": [
+            185,
+            232
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 17,
+          "w": 95,
+          "rows": [
+            148,
+            164
+          ],
+          "cols": [
+            19,
+            113
+          ]
+        },
+        {
+          "kind": "rect",
+          "h": 36,
+          "w": 61,
+          "rows": [
+            33,
+            68
+          ],
+          "cols": [
+            180,
+            240
+          ]
+        }
+      ],
+      "variants": [
+        {
+          "variant": 0,
+          "height": 256,
+          "shape": "256x256",
+          "n_air": 42036,
+          "n_hv_px": 22480,
+          "n_hv_components": 5,
+          "src_hv_adjacent_px": 0,
+          "refine_done": true,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.10047803121987e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.01171875,
+            "refine_rel_l2": 0.005639622898439154,
+            "refine_solve_residual": 3.008679763479815e-15,
+            "refine_sec": 0.71,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.014999999999417923
+          },
+          "files": [
+            "original_region_data_0_256.csv",
+            "potential_distribution_0_256.csv"
+          ],
+          "sec": 0.88
+        },
+        {
+          "variant": 1,
+          "height": 196,
+          "shape": "196x256",
+          "n_air": 28611,
+          "n_hv_px": 20665,
+          "n_hv_components": 5,
+          "src_hv_adjacent_px": 201,
+          "refine_done": false,
+          "ok": true,
+          "fail_reason": "",
+          "checks": {
+            "solve_residual": 2.0446522871602425e-15,
+            "bc_exact_mem": true,
+            "e0_grad_max": 0.0,
+            "stored_laplace_max_f32": 0.013671875,
+            "region_roundtrip_exact": true,
+            "bc_exact_roundtrip": true,
+            "roundtrip_max_abs_diff_v": 0.0005000000019208528,
+            "stored_laplace_max_csv": 0.014000000031956006
+          },
+          "files": [
+            "original_region_data_1_196.csv",
+            "potential_distribution_1_196.csv"
+          ],
+          "sec": 0.15
+        }
+      ],
+      "n_electrodes_base": 5,
+      "sec": 1.0
+    }
+  ],
+  "summary": {
+    "pairs_planned": 4,
+    "pairs_written": 4,
+    "pairs_failed": 0,
+    "conditions_ok": 2,
+    "checks": [
+      "1_BC_exact(mem+roundtrip)",
+      "2_conductor_E0(same-kind)",
+      "3_solve_residual<tol",
+      "4_stored_laplace<0.05V",
+      "5_refine_rel_l2<0.02"
+    ],
+    "duration_sec": 2.3
+  }
+}
