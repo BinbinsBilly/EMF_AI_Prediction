@@ -38,6 +38,12 @@ def parse_args():
     parser.add_argument('--batch-size', type=int, default=2)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--weight-decay', type=float, default=1e-5)
+    parser.add_argument('--scheduler', choices=['cosine', 'plateau', 'none'],
+                        default='cosine',
+                        help='cosine: cosine annealing to --min-lr each epoch; '
+                             'plateau: halve on val_loss stall (patience 8); '
+                             'none: fixed lr')
+    parser.add_argument('--min-lr', type=float, default=1e-6)
     parser.add_argument('--modes', type=int, default=32)
     parser.add_argument('--width', type=int, default=32)
     parser.add_argument('--lambda-phy', type=float, default=1.0)
@@ -476,7 +482,15 @@ def train():
     model = DualEncoderFNODecoder(modes=args.modes, width=args.width).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+    if args.scheduler == 'cosine':
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=args.min_lr)
+    elif args.scheduler == 'plateau':
+        # Monitor val loss (train loss is too noisy at batch_size 2 to be useful)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=8)
+    else:
+        scheduler = None
 
     # AMP only on CUDA; plain forward/backward on CPU
     amp_enabled = (device.type == 'cuda')
@@ -506,7 +520,6 @@ def train():
         avg = train_one_epoch(model, train_loader, optimizer, device, scaler, amp_enabled,
                               args.lambda_phy, args.lambda_grad, args.lambda_bc, args.lambda_eq,
                               args.grad_accum)
-        scheduler.step(avg['total'])
         current_lr = optimizer.param_groups[0]['lr']
 
         print(f"Epoch [{epoch+1}/{args.epochs}], Loss: {avg['total']:.6f}, MSE: {avg['mse']:.6f}, "
@@ -519,7 +532,9 @@ def train():
         writer.add_scalar('Loss/Gradient', avg['grad'], epoch)
         writer.add_scalar('Loss/BC', avg['bc'], epoch)
         writer.add_scalar('Loss/Equipotential', avg['eq'], epoch)
+        writer.add_scalar('train/lr', current_lr, epoch)
 
+        val_avg = None
         if len(val_loader) > 0:
             val_avg = validate(model, val_loader, device, args.lambda_phy,
                                args.lambda_grad, args.lambda_bc, args.lambda_eq,
@@ -540,6 +555,13 @@ def train():
 
         if (epoch + 1) % 10 == 0:
             log_visualization(writer, epoch, model, train_loader, device)
+
+        # Step after validation: plateau watches val_loss; cosine ignores arg
+        if scheduler is not None:
+            if args.scheduler == 'plateau' and val_avg is not None:
+                scheduler.step(val_avg['total'])
+            else:
+                scheduler.step()
 
     writer.close()
     save_model(model, save_dir=args.save_dir)

@@ -1,51 +1,67 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-gen_data.py — 2D 静电场 PINN 数据集自动生成（阶段二 Task 6，四几何族）
+gen_data.py — 2D 静电场 PINN 数据集自动生成（阶段三 Task 1：标注方案 v2 + 内部接地电极）
+
+标注方案 v2（严格不变式）
+=========================
+  region 图值域严格为 {1, 2, 3}；0 严禁出现在任何落盘 CSV（仅 dataset.py 对称
+  填充专用，由有效性掩码区分）：
+    1 = 接地电极（外框 1px 环 + 内部接地电极），Dirichlet 0V
+    2 = 空气求解域，Laplace 方程 ∇²φ=0
+    3 = 高压电极（HV），Dirichlet 60000V
 
 生成流程
 ========
 1. 每个工况(condition)用独立 RNG 流（由 --seed 派生，完全可复现）在 256×W 基准
-   画布上随机生成一族 HV 电极布局（参数空间见 GEOM_SPEC）：
+   画布上生成电极掩码列表（参数空间见 GEOM_SPEC）：
      rect    : 1~10 个实心矩形，边长 16~110 px
      circle  : 1~6 个实心圆/椭圆，半轴 10~52 px
      polygon : 1~4 个直角多边形（L/T/U 模板，旋转 0/90/180/270°）
      blob    : 1~3 个极坐标傅里叶扰动 blob，r(θ)=r0(1+Σ_{k=2..5} a_k cos(kθ+φ_k))，
                |a_k|≤0.25 且 Σ|a_k|≤0.7，星形域逐像素精确填充（构造上不自交）
-   布局约束：画布外框 1px 源极(0V)环=1；空气=2；HV 电极=3；电极与外框、电极两两
+   目标电极数分层轮转：n_target = 1 + (cond % N_max)，N_max 见 N_MAX_PER_FAMILY。
+   布局约束：画布外框 1px 源极(0V)环=1；空气=2；电极与外框、电极两两
    之间留 ≥8 px 空气隙（bbox 各膨胀 4px 不重叠 ⇔ 像素间距 ≥8）。
+   类型采样：每个内部电极独立以概率 --p-ground（默认 0.25）标为接地（1），
+   否则为 HV（3）；若全部采为接地则强制其中一个改 HV（保证 ≥1 HV）；
+   外框 1px 环恒为 1，不受采样影响。
 2. 每个变体(variant)仅改变画布高度：基准布局中心裁剪到目标高度后重画 1px 源极环；
-   裁剪后任一 HV 连通域 <20 px 或零电极 → 整个布局重采样（每工况最多 200 次）。
+   裁剪后 HV 连通域与内部接地连通域均须 ≥20 px 且 HV 至少 1 个，否则整个布局
+   重采样（每工况最多 200 次；外框环豁免碎片检查）。
    高度：默认变体0=256，其余从 [246,236,...,166] 无放回抽取（--heights 可显式指定）。
-   裁剪造成的"电极-源极环粘连"（0↔60000 界面跳变）为物理正常的不连续，
-   与现有数据一致（Task 5 实测 391/1314 对存在）。
-3. 真值：直接 import 复用 verify_data.solve_laplace_fd（Task 5 已验证的 5 点 FD
-   精确解，spsolve 相对残差 ~1e-15，单一来源不复制实现）——
-   空气=FD 解、源极=0V、HV=60000V；float32 存储。
+3. 真值：直接 import 复用 verify_data.solve_laplace_fd（5 点 FD 精确解，
+   spsolve 相对残差 ~1e-15，单一来源不复制实现）——空气=FD 解、任意 SRC 区
+   （外框环 ∪ 内部接地）=0V、HV=60000V；float32 存储。
 
-落盘前五项校验（任一失败拒写/删除该对并记录，单对失败不影响其余，最终 exit 1）
+落盘前六项校验（任一失败拒写/删除该对并记录，单对失败不影响其余，最终 exit 1）
 ======================================================================
-① BC 精确      : 源极像素电位全 0、HV 全 60000（内存 float32 精确验证；
+① BC 精确      : SRC 像素电位全 0、HV 全 60000（内存 float32 精确验证；
                   写盘后读回验证 region 逐值一致、BC 精确、空气值与意图 float32
                   值最大偏差 ≤ %.3f 舍入界 5.1e-4 V）
-② 导体 E=0     : 源极∪HV 十字内点上、邻居与中心"同种导体"方向的差分精确为 0
-                  （与 verify_data 语义一致，排除 src-HV 粘连界面的正常跳变）
-③ 求解收敛      : solve_laplace_fd 相对残差 < --tol-solve（默认 1e-10）
+② 导体 E=0     : SRC∪HV 十字内点上、邻居与中心"同种导体"方向的差分精确为 0
+                  （与 verify_data 语义一致，排除导体间粘连界面的正常跳变）
+③ 求解收敛      : solve_laplace_fd 相对残差 < --tol-solve（默认 1e-10），
+                  且 n_invalid=0、isolated_air=0
 ④ 存储场 Laplace: 读回后的存储场在空气区十字内点 5 点离散 Laplace 残差 max < 0.05 V
 ⑤ 细网格抽检    : 每工况前 ceil(ratio×variants) 个变体（默认 25%，即变体0），
                   电极几何坐标×2（np.kron 2×2 上采样画 512 画布）重新求解后
                   2×2 均值池化降采样回原尺寸，与原解在空气区比较 rel L2 < 0.02
+⑥ 标注合规      : 落盘前显式断言 set(unique(region)) ⊆ {1,2,3}（0 严禁落盘），
+                  失败拒写盘并记录
 
 输出布局
 ========
   {out}/{family}/{family}_c{cond:03d}/original_region_data_{v}_{H}.csv
   {out}/{family}/{family}_c{cond:03d}/potential_distribution_{v}_{H}.csv
-  {out}/{family}/gen_report.json        （每对校验结果 + 耗时 + 布局元数据）
+  {out}/{family}/gen_report.json        （每对校验结果 + p_ground + 电极类型
+                                         + 目标/实际电极数 + 耗时 + 布局元数据）
 CSV 格式与现有数据对齐：无表头、逗号分隔；region 整数、potential %.3f 定点。
 
 用法
 ====
   python3 gen_data.py --family rect --conditions 2 --variants 2 --out /workspace/data
+  python3 gen_data.py --family rect --conditions 50 --variants 10 --p-ground 0.25
 """
 
 import argparse
@@ -67,11 +83,12 @@ SRC, AIR, HV = 1, 2, 3
 V_SRC, V_HV = 0.0, 60000.0
 BASE_H = 256                              # 布局基准画布高（宽度 = --size）
 GAP = 8                                   # 电极-外框/电极间最小空气隙 (px)
-MIN_ELECTRODE_PX = 20                     # 裁剪后 HV 连通域最小像素数
+MIN_ELECTRODE_PX = 20                     # 裁剪后 HV / 内部接地 连通域最小像素数
 MAX_LAYOUT_TRIES = 200                    # 每工况布局重采样上限
 PLACE_TRIES = 400                         # 单电极随机放置尝试上限
 DEFAULT_HEIGHTS = list(range(256, 165, -10))   # [256,246,...,166]
 FAM_ID = {"rect": 0, "circle": 1, "polygon": 2, "blob": 3}
+N_MAX_PER_FAMILY = {"rect": 10, "circle": 6, "polygon": 4, "blob": 3}
 LAP_TOL = 0.05                            # 校验④阈值 (V)
 REFINE_TOL = 0.02                         # 校验⑤阈值 (rel L2)
 ROUNDTRIP_TOL = 5.1e-4                    # %.3f 舍入上界 0.0005 + 余量 (V)
@@ -121,10 +138,14 @@ def _canvas(H, W):
 
 
 # ---------------------------------------------------------------- 四族生成器
-def gen_rect(rng, H, W):
-    n = int(rng.integers(1, 11))
-    placed, eles = [], []
-    for _ in range(n):
+# 约定：每个生成器返回 (eles, masks)，其中
+#   eles  : 电极元数据列表（几何参数 + rows/cols bbox，供 gen_report.json 记录）
+#   masks : 与 eles 等长的全画布布尔 mask 列表（True = 该电极占据的像素）
+# 上色（ground/HV 类型采样 + 写值）由公共函数 _colorize 完成，保证可复现与 ≥1 HV。
+
+def gen_rect(rng, H, W, n_target):
+    placed, eles, masks = [], [], []
+    for _ in range(n_target):
         h = int(rng.integers(16, 111))
         w = int(rng.integers(16, 111))
         box = _try_place(rng, placed, h, w, H, W)
@@ -133,31 +154,30 @@ def gen_rect(rng, H, W):
         placed.append(box)
         eles.append({"kind": "rect", "h": h, "w": w,
                      "rows": [box[0], box[1]], "cols": [box[2], box[3]]})
-    region = _canvas(H, W)
-    for b in placed:
-        region[b[0]:b[1] + 1, b[2]:b[3] + 1] = HV
-    return region, eles
+        m = np.zeros((H, W), dtype=bool)
+        m[box[0]:box[1] + 1, box[2]:box[3] + 1] = True
+        masks.append(m)
+    return eles, masks
 
 
-def gen_circle(rng, H, W):
-    n = int(rng.integers(1, 7))
-    placed, eles = [], []
-    for _ in range(n):
+def gen_circle(rng, H, W, n_target):
+    placed, eles, masks = [], [], []
+    for _ in range(n_target):
         ax = int(rng.integers(10, 53))   # 半轴（列向）
         ay = int(rng.integers(10, 53))   # 半轴（行向）
         box = _try_place(rng, placed, 2 * ay + 1, 2 * ax + 1, H, W)
         if box is None:
             continue
         placed.append(box)
-        eles.append({"kind": "ellipse", "cy": (box[0] + box[1]) // 2,
-                     "cx": (box[2] + box[3]) // 2, "ay": ay, "ax": ax})
-    region = _canvas(H, W)
-    for e in eles:
-        cy, cx, ay, ax = e["cy"], e["cx"], e["ay"], e["ax"]
+        cy = (box[0] + box[1]) // 2
+        cx = (box[2] + box[3]) // 2
+        eles.append({"kind": "ellipse", "cy": cy, "cx": cx, "ay": ay, "ax": ax})
         yy, xx = np.mgrid[cy - ay:cy + ay + 1, cx - ax:cx + ax + 1]
-        m = ((yy - cy) / ay) ** 2 + ((xx - cx) / ax) ** 2 <= 1.0
-        region[cy - ay:cy + ay + 1, cx - ax:cx + ax + 1][m] = HV
-    return region, eles
+        sub = ((yy - cy) / ay) ** 2 + ((xx - cx) / ax) ** 2 <= 1.0
+        m = np.zeros((H, W), dtype=bool)
+        m[cy - ay:cy + ay + 1, cx - ax:cx + ax + 1][sub] = True
+        masks.append(m)
+    return eles, masks
 
 
 def _make_poly(rng):
@@ -189,10 +209,9 @@ def _make_poly(rng):
     return name, k * 90, np.rot90(m, k)
 
 
-def gen_polygon(rng, H, W):
-    n = int(rng.integers(1, 5))
+def gen_polygon(rng, H, W, n_target):
     placed, eles, masks = [], [], []
-    for _ in range(n):
+    for _ in range(n_target):
         name, rot, m = _make_poly(rng)
         h, w = m.shape
         box = _try_place(rng, placed, h, w, H, W)
@@ -201,17 +220,15 @@ def gen_polygon(rng, H, W):
         placed.append(box)
         eles.append({"kind": name, "rot_deg": rot, "h": int(h), "w": int(w),
                      "rows": [box[0], box[1]], "cols": [box[2], box[3]]})
-        masks.append((box, m))
-    region = _canvas(H, W)
-    for b, m in masks:
-        region[b[0]:b[0] + m.shape[0], b[2]:b[2] + m.shape[1]][m] = HV
-    return region, eles
+        full = np.zeros((H, W), dtype=bool)
+        full[box[0]:box[0] + h, box[2]:box[2] + w][m] = True
+        masks.append(full)
+    return eles, masks
 
 
-def gen_blob(rng, H, W):
-    n = int(rng.integers(1, 4))
-    placed, eles = [], []
-    for _ in range(n):
+def gen_blob(rng, H, W, n_target):
+    placed, eles, masks = [], [], []
+    for _ in range(n_target):
         r0 = float(rng.uniform(18.0, 44.0))
         a = rng.uniform(-0.25, 0.25, size=4)            # 谐波 k=2..5
         s = float(np.abs(a).sum())
@@ -224,23 +241,44 @@ def gen_blob(rng, H, W):
         if box is None:
             continue
         placed.append(box)
+        cy = (box[0] + box[1]) // 2
+        cx = (box[2] + box[3]) // 2
         eles.append({"kind": "blob", "r0": r0, "a": a.tolist(), "phi": phi.tolist(),
-                     "center": [(box[0] + box[1]) // 2, (box[2] + box[3]) // 2],
-                     "side": side})
-    region = _canvas(H, W)
-    for e in eles:
-        cy, cx = e["center"]
-        half = e["side"] // 2
+                     "center": [cy, cx], "side": side})
+        half = side // 2
         yy, xx = np.mgrid[cy - half:cy + half + 1, cx - half:cx + half + 1]
         dy = (yy - cy).astype(np.float64)
         dx = (xx - cx).astype(np.float64)
         rho = np.hypot(dx, dy)
         th = np.arctan2(dy, dx)
-        r_th = e["r0"] * (1.0 + sum(e["a"][i] * np.cos((i + 2) * th + e["phi"][i])
-                                    for i in range(4)))
-        m = rho <= r_th
-        region[cy - half:cy + half + 1, cx - half:cx + half + 1][m] = HV
-    return region, eles
+        r_th = r0 * (1.0 + sum(a[i] * np.cos((i + 2) * th + phi[i])
+                               for i in range(4)))
+        sub = rho <= r_th
+        m = np.zeros((H, W), dtype=bool)
+        m[cy - half:cy + half + 1, cx - half:cx + half + 1][sub] = True
+        masks.append(m)
+    return eles, masks
+
+
+def _colorize(rng, H, W, eles, masks, p_ground):
+    """按 p_ground 独立采样每个内部电极类型（ground=1 / hv=3），保证 ≥1 HV；
+    外框 1px 环恒为 SRC。返回 (region, eles_with_type)。"""
+    region = _canvas(H, W)
+    n = len(masks)
+    if n > 0:
+        is_ground = rng.random(n) < p_ground
+        if not np.any(~is_ground):            # 全接地 → 强制一个为 HV
+            is_ground[int(rng.integers(0, n))] = False
+    else:
+        is_ground = np.zeros(0, dtype=bool)
+    eles_out = []
+    for i, (e, m) in enumerate(zip(eles, masks)):
+        typ = "ground" if bool(is_ground[i]) else "hv"
+        e2 = dict(e)
+        e2["type"] = typ
+        eles_out.append(e2)
+        region[m] = SRC if is_ground[i] else HV
+    return region, eles_out
 
 
 GENERATORS = {"rect": gen_rect, "circle": gen_circle,
@@ -257,15 +295,38 @@ def make_variant(region_base, H):
     return v
 
 
-def variant_ok(v):
-    """裁剪后：至少 1 个 HV 电极，且所有 HV 连通域 ≥ MIN_ELECTRODE_PX（防碎片）。"""
-    lbl, n = ndimage.label(v == HV, structure=ndimage.generate_binary_structure(2, 1))
+def _internal_src_mask(v):
+    """内部接地区（排除外框 1px 环）。"""
+    m = (v == SRC).copy()
+    m[0, :] = m[-1, :] = False
+    m[:, 0] = m[:, -1] = False
+    return m
+
+
+def _check_fragments(mask, min_px, exempt_if_empty=True):
+    """mask 上所有 4-连通域 ≥ min_px；mask 为空时按 exempt_if_empty 判定。"""
+    lbl, n = ndimage.label(mask, structure=ndimage.generate_binary_structure(2, 1))
     if n == 0:
-        return False, "no_electrode_after_crop"
+        return (True, 0, None) if exempt_if_empty else (False, 0, None)
     sizes = np.bincount(lbl.ravel())[1:]
-    if int(sizes.min()) < MIN_ELECTRODE_PX:
-        return False, f"electrode_fragment_lt{MIN_ELECTRODE_PX}px(min={int(sizes.min())})"
-    return True, f"n_hv_components={n}"
+    mn = int(sizes.min())
+    return (mn >= min_px), n, mn
+
+
+def variant_ok(v):
+    """裁剪后：(a) 至少 1 个 HV 电极且所有 HV 连通域 ≥ MIN_ELECTRODE_PX；
+    (b) 内部接地（外框环豁免）所有连通域 ≥ MIN_ELECTRODE_PX（允许零内部接地）。"""
+    ok_hv, n_hv, mn_hv = _check_fragments(v == HV, MIN_ELECTRODE_PX,
+                                          exempt_if_empty=False)
+    if n_hv == 0:
+        return False, "no_hv_electrode_after_crop"
+    if not ok_hv:
+        return False, (f"hv_fragment_lt{MIN_ELECTRODE_PX}px(min={mn_hv})")
+    ok_g, n_g, mn_g = _check_fragments(_internal_src_mask(v), MIN_ELECTRODE_PX,
+                                       exempt_if_empty=True)
+    if not ok_g:
+        return False, (f"internal_ground_fragment_lt{MIN_ELECTRODE_PX}px(min={mn_g})")
+    return True, f"n_hv_components={n_hv}, n_internal_ground_components={n_g}"
 
 
 def pick_heights(rng, variants, heights_list):
@@ -373,7 +434,7 @@ def process_pair(cond_dir, v_idx, height, region, do_refine, args):
         info.pop(k, None)
     pot32 = pot.astype(np.float32)
 
-    # ③ 求解收敛 + 几何异常防护（本生成器结构上不应出现 0 值/隔离空气）
+    # ③ 求解收敛 + 几何异常防护（n_invalid=0 且 isolated_air=0）
     rec["checks"]["solve_residual"] = float(info["solve_residual"])
     if not info["solve_residual"] < args.tol_solve:
         rec["fail_reason"] = (f"solve_residual={info['solve_residual']:.3e} "
@@ -390,8 +451,13 @@ def process_pair(cond_dir, v_idx, height, region, do_refine, args):
         rec["fail_reason"] = "bc_not_exact_in_memory"
         return finish(rec)
     rec["checks"]["bc_exact_mem"] = True
-    if not set(np.unique(region).tolist()) <= {SRC, AIR, HV}:
-        rec["fail_reason"] = "region_value_out_of_range"
+
+    # ⑥ 标注合规：落盘 region 值全集 ⊆ {1,2,3}，0 严禁出现
+    uniq = set(np.unique(region).tolist())
+    rec["checks"]["region_values"] = sorted(int(x) for x in uniq)
+    rec["checks"]["region_label_compliant"] = bool(uniq <= {SRC, AIR, HV})
+    if not rec["checks"]["region_label_compliant"]:
+        rec["fail_reason"] = f"region_label_violation(unique={sorted(uniq)})"
         return finish(rec)
 
     # ② 导体 E=0（同种导体方向，精确 0）
@@ -455,7 +521,7 @@ def process_pair(cond_dir, v_idx, height, region, do_refine, args):
 # ---------------------------------------------------------------- 主流程
 def main():
     ap = argparse.ArgumentParser(
-        description="2D 静电场数据集自动生成（四几何族 + FD 精确解 + 五项校验）",
+        description="2D 静电场数据集自动生成（四几何族 + 标注方案v2 + 内部接地电极 + 六项校验）",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     ap.add_argument("--family", required=True, choices=sorted(FAM_ID),
                     help="几何族")
@@ -467,6 +533,9 @@ def main():
     ap.add_argument("--heights", default="",
                     help="逗号分隔高度列表（显式指定时按序取前 variants 个）；"
                          "默认变体0=256、其余从 [246,...,166] 无放回抽取")
+    ap.add_argument("--p-ground", type=float, default=0.25,
+                    help="每个内部电极独立采样为接地(1) 的概率；其余为 HV(3)；"
+                         "若整布局全接地则强制一个为 HV")
     ap.add_argument("--tol-solve", type=float, default=1e-10,
                     help="校验③：FD 求解相对残差阈值")
     ap.add_argument("--refine-check-ratio", type=float, default=0.25,
@@ -476,6 +545,8 @@ def main():
 
     if args.conditions < 1 or args.variants < 1:
         ap.error("--conditions/--variants 必须 ≥ 1")
+    if not (0.0 <= args.p_ground <= 1.0):
+        ap.error("--p-ground 必须 ∈ [0, 1]")
     heights_list = []
     if args.heights.strip():
         try:
@@ -502,11 +573,18 @@ def main():
             "script": os.path.abspath(__file__),
             "family": args.family,
             "geom_spec": GEOM_SPEC[args.family],
+            "label_scheme": {"1": "ground(0V)", "2": "air",
+                             "3": "hv(60000V)",
+                             "note": "值 0 严禁出现在落盘 CSV，"
+                                     "仅 dataset.py 对称填充专用"},
             "seed": args.seed,
             "conditions": args.conditions,
             "variants_per_condition": args.variants,
             "size_w": args.size,
             "base_layout_canvas": f"{BASE_H}x{args.size}",
+            "p_ground": args.p_ground,
+            "n_max_per_family": N_MAX_PER_FAMILY[args.family],
+            "electrode_count_rule": "n_target = 1 + (cond % N_max)（最佳努力放置）",
             "heights_explicit": heights_list or None,
             "heights_default_pool": None if heights_list else DEFAULT_HEIGHTS,
             "height_rule": ("explicit" if heights_list
@@ -528,22 +606,28 @@ def main():
 
     planned = args.conditions * args.variants
     n_written = 0
+    n_max = N_MAX_PER_FAMILY[args.family]
     print(f"[{args.family}] 生成 {args.conditions} 工况 × {args.variants} 变体 "
-          f"→ {fam_out}（seed={args.seed}, 每工况前 {n_refine} 个变体做细网格抽检）",
+          f"→ {fam_out}（seed={args.seed}, p_ground={args.p_ground}, "
+          f"每工况前 {n_refine} 个变体做细网格抽检）",
           flush=True)
 
     for cond in range(args.conditions):
         rng = np.random.default_rng([args.seed, FAM_ID[args.family], cond])
         heights = pick_heights(rng, args.variants, heights_list)
+        n_target = 1 + (cond % n_max)
         cond_rec = {"condition": f"{args.family}_c{cond:03d}", "heights": heights,
+                    "target_electrodes": n_target, "actual_electrodes": 0,
                     "ok": True, "fail_reason": "", "layout_attempts": 0,
                     "electrodes": [], "variants": []}
         t_cond = time.time()
 
-        # ---- 布局采样（裁剪碎片/零电极 → 整布局重采样）
+        # ---- 布局采样（裁剪碎片/零HV/内部接地碎片 → 整布局重采样）
         layout = None
         for attempt in range(1, MAX_LAYOUT_TRIES + 1):
-            region_base, eles = GENERATORS[args.family](rng, BASE_H, args.size)
+            eles_raw, masks = GENERATORS[args.family](rng, BASE_H, args.size, n_target)
+            region_base, eles = _colorize(rng, BASE_H, args.size, eles_raw, masks,
+                                          args.p_ground)
             vs = [make_variant(region_base, h) for h in heights]
             cond_rec["layout_attempts"] = attempt
             if all(variant_ok(v)[0] for v in vs):
@@ -552,7 +636,8 @@ def main():
         if layout is None:
             cond_rec["ok"] = False
             cond_rec["fail_reason"] = (f"layout_resample_exhausted({MAX_LAYOUT_TRIES}): "
-                                       "裁剪后始终出现 <20px 电极碎片或零电极")
+                                       f"裁剪后始终出现 <{MIN_ELECTRODE_PX}px 电极碎片"
+                                       "（HV 或内部接地）或零 HV 电极")
             report["conditions"].append(cond_rec)
             print(f"[{args.family}] {cond_rec['condition']}: 布局重采样耗尽 → 工况失败",
                   flush=True)
@@ -560,11 +645,16 @@ def main():
         region_base, eles, vs = layout
         cond_rec["electrodes"] = eles
         cond_rec["n_electrodes_base"] = len(eles)
+        cond_rec["actual_electrodes"] = len(eles)
+        n_ground = sum(1 for e in eles if e["type"] == "ground")
+        n_hv_e = sum(1 for e in eles if e["type"] == "hv")
 
         cond_dir = os.path.join(fam_out, cond_rec["condition"])
         os.makedirs(cond_dir, exist_ok=True)
         print(f"[{args.family}] {cond_rec['condition']}: heights={heights}, "
-              f"电极数(256布局)={len(eles)}, 布局尝试={cond_rec['layout_attempts']}",
+              f"target={n_target}, 电极数(256布局)={len(eles)} "
+              f"(ground={n_ground}, hv={n_hv_e}), "
+              f"布局尝试={cond_rec['layout_attempts']}",
               flush=True)
 
         for vi, (h, v) in enumerate(zip(heights, vs)):
@@ -590,7 +680,8 @@ def main():
         "conditions_ok": sum(1 for c in report["conditions"] if c["ok"]),
         "checks": ["1_BC_exact(mem+roundtrip)", "2_conductor_E0(same-kind)",
                    "3_solve_residual<tol", "4_stored_laplace<0.05V",
-                   "5_refine_rel_l2<0.02"],
+                   "5_refine_rel_l2<0.02",
+                   "6_region_labels_subset_{1,2,3}(no_zero)"],
         "duration_sec": round(time.time() - t_start, 1),
     }
     rep_path = os.path.join(fam_out, "gen_report.json")
