@@ -151,14 +151,18 @@ class CrossAttentionBlock(nn.Module):
     are paired and rotated (requires head_dim % 8 == 0 so that each axis holds
     head_dim//4 dims = head_dim//8 frequency pairs).
     """
-    def __init__(self, dim, num_heads=2, downsample_factor=16):
+    def __init__(self, dim, num_heads=2, downsample_factor=16, use_edt=True):
         super(CrossAttentionBlock, self).__init__()
         assert dim % num_heads == 0, "dim must be divisible by num_heads"
         self.num_heads = num_heads
         self.dim = dim
         self.head_dim = dim // num_heads
-        assert self.head_dim % 8 == 0, \
-            "head_dim must be divisible by 8 (4 axes x paired rotations)"
+        # Axes: 4 (y, x, dist-to-source, dist-to-boundary) when use_edt,
+        # else 2 (y, x only). Each axis holds head_dim//n_axes dims.
+        self.use_edt = use_edt
+        self.n_axes = 4 if use_edt else 2
+        assert self.head_dim % (2 * self.n_axes) == 0, \
+            f"head_dim must be divisible by 2*n_axes={2*self.n_axes}"
         self.scale = self.head_dim ** -0.5
         self.downsample_factor = downsample_factor
 
@@ -173,18 +177,18 @@ class CrossAttentionBlock(nn.Module):
         self.out_proj = nn.Conv2d(dim, dim, 1)
 
         # Learnable RoPE frequencies, log-parameterized: theta = exp(param)
-        # Shape: (4 axes, head_dim//8 pairs per axis)
-        pairs = self.head_dim // 8
+        # Shape: (n_axes, pairs), pairs = head_dim // (2*n_axes)
+        pairs = self.head_dim // (2 * self.n_axes)
         # Geometric wavelength series (224, 28, 3.5, ... px) covering
         # ~4px to ~256px spatial scales; theta_init = 2*pi / wavelength
         wavelengths = 224.0 / (8.0 ** torch.arange(pairs, dtype=torch.float32))
         theta_init = 2.0 * math.pi / wavelengths
         self.rope_log_freqs = nn.Parameter(
-            torch.log(theta_init).unsqueeze(0).repeat(4, 1)
+            torch.log(theta_init).unsqueeze(0).repeat(self.n_axes, 1)
         )
 
     def get_rope_frequencies(self):
-        """Return RoPE frequencies theta = exp(rope_log_freqs), shape (4, pairs)."""
+        """Return RoPE frequencies theta = exp(rope_log_freqs), (n_axes, pairs)."""
         return torch.exp(self.rope_log_freqs)
 
     def _build_positions(self, B, H, W, pos_dist, device, offset, stride):
@@ -199,39 +203,43 @@ class CrossAttentionBlock(nn.Module):
         xs = (torch.arange(W, device=device, dtype=torch.float32) + offset) * stride
         y_grid = ys.view(1, H, 1).expand(B, H, W)
         x_grid = xs.view(1, 1, W).expand(B, H, W)
-        if pos_dist is not None:
-            d_src = pos_dist[:, 0].float()
-            d_bnd = pos_dist[:, 1].float()
-        else:
-            d_src = torch.zeros(B, H, W, device=device, dtype=torch.float32)
-            d_bnd = torch.zeros(B, H, W, device=device, dtype=torch.float32)
-        pos = torch.stack([y_grid, x_grid, d_src, d_bnd], dim=-1)  # (B, H, W, 4)
-        return pos.reshape(B, H * W, 4)
+        coords = [y_grid, x_grid]
+        if self.n_axes == 4:
+            if pos_dist is not None:
+                d_src = pos_dist[:, 0].float()
+                d_bnd = pos_dist[:, 1].float()
+            else:
+                d_src = torch.zeros(B, H, W, device=device, dtype=torch.float32)
+                d_bnd = torch.zeros(B, H, W, device=device, dtype=torch.float32)
+            coords += [d_src, d_bnd]
+        pos = torch.stack(coords, dim=-1)        # (B, H, W, n_axes)
+        return pos.reshape(B, H * W, self.n_axes)
 
     def _apply_rope(self, t, pos):
         """
         Rotate adjacent dim pairs of t with per-axis learnable frequencies.
         t:   (B, heads, N, head_dim)
-        pos: (B, N, 4)
+        pos: (B, N, n_axes)
         For a pair (d0, d1), position pos and frequency theta:
             d0' = d0*cos(pos*theta) - d1*sin(pos*theta)
             d1' = d0*sin(pos*theta) + d1*cos(pos*theta)
         """
         B, hd, N, D = t.shape
-        seg = D // 4          # dims per axis
+        n_axes = self.n_axes
+        seg = D // n_axes     # dims per axis
         pairs = seg // 2      # frequency pairs per axis
-        t = t.reshape(B, hd, N, 4, pairs, 2)
-        d0 = t[..., 0]        # (B, hd, N, 4, pairs)
+        t = t.reshape(B, hd, N, n_axes, pairs, 2)
+        d0 = t[..., 0]        # (B, hd, N, n_axes, pairs)
         d1 = t[..., 1]
 
-        freqs = torch.exp(self.rope_log_freqs)          # (4, pairs)
-        angles = pos.unsqueeze(-1) * freqs              # (B, N, 4, pairs)
-        cos = torch.cos(angles).unsqueeze(1)            # (B, 1, N, 4, pairs)
+        freqs = torch.exp(self.rope_log_freqs)          # (n_axes, pairs)
+        angles = pos.unsqueeze(-1) * freqs              # (B, N, n_axes, pairs)
+        cos = torch.cos(angles).unsqueeze(1)            # (B, 1, N, n_axes, pairs)
         sin = torch.sin(angles).unsqueeze(1)
 
         d0_new = d0 * cos - d1 * sin
         d1_new = d0 * sin + d1 * cos
-        out = torch.stack([d0_new, d1_new], dim=-1)     # (B, hd, N, 4, pairs, 2)
+        out = torch.stack([d0_new, d1_new], dim=-1)     # (B, hd, N, n_axes, pairs, 2)
         return out.reshape(B, hd, N, D)
 
     def forward(self, x, context, pos_dist=None):
@@ -281,22 +289,26 @@ class CrossAttentionBlock(nn.Module):
         return self.out_proj(out)
 
 class DualEncoderFNODecoder(nn.Module):
-    def __init__(self, modes=32, width=32):
+    def __init__(self, modes=32, width=32, use_edt=True):
         super(DualEncoderFNODecoder, self).__init__()
 
         self.modes = modes
         self.width = width
+        self.use_edt = use_edt
 
         # Encoders
         self.source_encoder = LightweightUNetEncoder(in_channels=1, base_channels=width)
         self.geo_encoder = GeometryEmbedding(in_channels=2, out_channels=width)
 
-        # Cross Attention (num_heads=2 -> head_dim=16 for width=32)
+        # Cross Attention (num_heads=2 -> head_dim=width/2)
         # Source attending to Geometry; K/V downsample factor 16 keeps
-        # the attention map small for 4GB GPUs.
-        self.cross_attn_s2g = CrossAttentionBlock(width, num_heads=2, downsample_factor=16)
+        # the attention map small for 4GB GPUs. use_edt toggles whether the
+        # RoPE carries the two EDT distance axes.
+        self.cross_attn_s2g = CrossAttentionBlock(
+            width, num_heads=2, downsample_factor=16, use_edt=use_edt)
         # Geometry attending to Source
-        self.cross_attn_g2s = CrossAttentionBlock(width, num_heads=2, downsample_factor=16)
+        self.cross_attn_g2s = CrossAttentionBlock(
+            width, num_heads=2, downsample_factor=16, use_edt=use_edt)
 
         # Fusion
         self.fusion_conv = nn.Conv2d(width * 2, width, 1)

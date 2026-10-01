@@ -60,6 +60,8 @@ def parse_args():
                         help='Spectral modes of DualEncoderFNODecoder (model.py)')
     parser.add_argument('--width', type=int, default=32,
                         help='Width of DualEncoderFNODecoder (model.py)')
+    parser.add_argument('--no-edt', action='store_true',
+                        help='Match no-EDT weights (RoPE y/x axes only)')
     parser.add_argument('--norm-factor', type=float, default=60000.0,
                         help='Potential normalization factor (dataset.py)')
     parser.add_argument('--out', type=str, default=None,
@@ -168,7 +170,8 @@ def main():
                         shuffle=False, num_workers=0)
 
     # ---- 模型与权重 ----
-    model = DualEncoderFNODecoder(modes=args.modes, width=args.width).to(device)
+    model = DualEncoderFNODecoder(
+        modes=args.modes, width=args.width, use_edt=not args.no_edt).to(device)
     state_dict = torch.load(args.weights, map_location=device)
     try:
         model.load_state_dict(state_dict)

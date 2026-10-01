@@ -46,6 +46,8 @@ def parse_args():
     parser.add_argument('--min-lr', type=float, default=1e-6)
     parser.add_argument('--modes', type=int, default=32)
     parser.add_argument('--width', type=int, default=32)
+    parser.add_argument('--no-edt', action='store_true',
+                        help='EDT ablation: RoPE keeps only y/x axes (no distance axes)')
     parser.add_argument('--lambda-phy', type=float, default=1.0)
     parser.add_argument('--lambda-grad', type=float, default=0.1)
     parser.add_argument('--lambda-bc', type=float, default=2.0)
@@ -479,7 +481,8 @@ def train():
 
     print(f"Found {num_samples} samples.")
 
-    model = DualEncoderFNODecoder(modes=args.modes, width=args.width).to(device)
+    model = DualEncoderFNODecoder(
+        modes=args.modes, width=args.width, use_edt=not args.no_edt).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     if args.scheduler == 'cosine':
